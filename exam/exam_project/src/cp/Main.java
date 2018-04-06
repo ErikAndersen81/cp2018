@@ -24,10 +24,10 @@ public class Main
     private static void testm2() {
             Path dir = Paths.get("/home/erik/NetBeansProjects/exam/cp2018/exam/data_example");
             long t1 =System.currentTimeMillis();
-            Result res = Exam.m2(dir, 200);
+            Result res = Exam.m2(dir, 2000000);
             long t2 =System.currentTimeMillis();
             System.out.println(res.path() + "\t" + res.number());
-            System.out.println("delta = " + (t2-t1));
+            System.out.println("took " + (t2-t1) + "ms");
         }
         
         private void testm1(){
