@@ -23,6 +23,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -37,8 +38,8 @@ public class Exam
     private static final ExecutorService WORKSTEALEXEC = Executors.newWorkStealingPool(CORES);
     private static final ExecutorService FIXEDTHREADEXEC = Executors.newFixedThreadPool(CORES);
     private static final List<Result> RESULT = new ArrayList<>();
-    private static final CompletionService<Result> COMP = new ExecutorCompletionService<Result>(FIXEDTHREADEXEC);
-    
+    private static final CompletionService<ExtendedResult2> COMP = new ExecutorCompletionService<ExtendedResult2>(FIXEDTHREADEXEC);
+    private static AtomicInteger lines2 = new AtomicInteger(0);
     
     /**
      * Factory method for creating results. 
@@ -240,27 +241,28 @@ public class Exam
 	 *  - number: the line number, starting from 1 (e.g., 1 if it is the first line, 3 if it is the third, etc.)
 	 * 
 	 */
-	public static Result m2( Path dir, int min )
-	{
+	public static Result m2( Path dir, int min ) {
             parseDir2(dir, min);
-            Result res = checkResults(min);
+            Result res = checkResults2(min);
             FIXEDTHREADEXEC.shutdownNow();
-            System.out.println("res = " + res);
             return res;
         }
         
-        private static Result checkResults (int min){
-            Result res = null;
-            while (true){
+        private static Result checkResults2 (int min) {
+            ExtendedResult2 res = null;
+            while ( lines2.get() != 0 || res == null) {
+                lines2.getAndDecrement();
                 try {
-                    res = COMP.poll(min, TimeUnit.HOURS).get();
-                    if (res.number()<= min) return res;
+                    res = COMP.poll( 1 , TimeUnit.HOURS).get();
+                    if ( res.value() <= min ) return res;
                 } catch (InterruptedException ex) {
                     Logger.getLogger(Exam.class.getName()).log(Level.SEVERE, null, ex);
                 } catch (ExecutionException ex) {
                     Logger.getLogger(Exam.class.getName()).log(Level.SEVERE, null, ex);
                 }
             }
+            System.out.println("No results found");
+            return null;
         }
         
 	private static void parseDir2(Path dir, int min) {
@@ -277,7 +279,6 @@ public class Exam
             } catch (IOException e) {
                 Logger.getLogger(Exam.class.getName()).log(Level.SEVERE, null, e);
             }
-            
         }
         
         private static void parseFile2(Path f) {
@@ -296,17 +297,47 @@ public class Exam
             } catch (FileNotFoundException ex) {
                 Logger.getLogger(Exam.class.getName()).log(Level.SEVERE, null, ex);
             }
-            
         }
         
-        private static Result parseLine2(String nextLine, int lineNum, Path f) {
+        private static ExtendedResult2 parseLine2(String nextLine, int line, Path f) {
+            lines2.getAndIncrement();
             Integer val = 0;
             for(String s:nextLine.split(",")){
                 val += Integer.parseInt(s);
             }
-            return newResult(f,lineNum); // THIS IS WRONG!!!
+            return newExtendedResult2(f, val, line);
         }
         
+        private static ExtendedResult2 newExtendedResult2(Path p, int val, int line ){
+            return new ExtendedResult2() {
+                @Override
+                public Path path() {
+                    return p;
+                }
+
+                @Override
+                public int number() {
+                    return line;
+                }
+
+                @Override
+                public int value() {
+                    return val;
+                }
+            };
+        }
+        
+        private interface ExtendedResult2 extends Result {
+            
+            @Override
+            public Path path();
+            
+            @Override
+            public int number();
+            
+            public int value();
+        
+        }
     
 	/**
 	 * Computes overall statistics about the occurrences of numbers in a directory.
@@ -317,7 +348,7 @@ public class Exam
 	 */
 	public static Stats m3( Path dir )
 	{
-		throw new UnsupportedOperationException();
+            throw new UnsupportedOperationException();
 	}
 
 
