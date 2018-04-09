@@ -10,8 +10,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Dictionary;
+import java.util.Hashtable;
 import java.util.List;
 import java.util.Scanner;
+import java.util.Set;
+import java.util.SortedSet;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
@@ -40,6 +44,7 @@ public class Exam
     private static final List<Result> RESULT = new ArrayList<>();
     private static final CompletionService<ExtendedResult2> COMP = new ExecutorCompletionService<ExtendedResult2>(FIXEDTHREADEXEC);
     private static AtomicInteger lines2 = new AtomicInteger(0);
+    private static final Stats3 stats3 = new Stats3();
     
     /**
      * Factory method for creating results. 
@@ -348,9 +353,150 @@ public class Exam
 	 */
 	public static Stats m3( Path dir )
 	{
-            throw new UnsupportedOperationException();
+            parseDir3(dir, stats3).forEach((f) -> {
+                try {
+                    f.get();
+                } catch (InterruptedException | ExecutionException ex) {
+                    Logger.getLogger(Exam.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            });
+            // All threads are finished and we are ready to shut down.
+            WORKSTEALEXEC.shutdownNow();
+            try {
+                WORKSTEALEXEC.awaitTermination(1, TimeUnit.HOURS);
+            } catch (InterruptedException ex) {
+                Logger.getLogger(Exam.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            return stats3;
 	}
+        
+        private static List<Future<Result>> parseDir3(Path path, Stats3 stats) {
+            List<Future<Result>> partialResults = new ArrayList<>();
+            List<Future<List<Future<Result>>>> partialResultsList = new ArrayList<>();
+            
+            // Parse the directory and create new threads for parsing either files or subdirectories.
+            try (DirectoryStream<Path> stream =
+                    Files.newDirectoryStream(path)){
+                stream.forEach(p -> {
+                    if (Files.isDirectory(p)){
+                        partialResultsList.add(WORKSTEALEXEC.submit(() -> parseDir3(p, stats)));
+                    }
+                    if (p.toString().endsWith(".txt") || p.toString().endsWith(".dat")){
+                        partialResults.add(WORKSTEALEXEC.submit(() -> parseFile3(p, stats)));
+                    }
+                });
+            } catch (IOException ex) {
+                Logger.getLogger(Exam.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            
+            // Wait for every file and subdirectory parsed to return their results.
+            partialResultsList.forEach((future) -> {
+                try {
+                    List<Future<Result>> resultList = (List<Future<Result>>) future.get();
+                    resultList.forEach((r) -> partialResults.add(r));
+                } catch (InterruptedException | ExecutionException ex) {
+                    Logger.getLogger(Exam.class.getName()).log(Level.SEVERE, null, ex);
+                }
+            });
+            return partialResults;
+        }
+        
+        private static Result parseFile3(Path path, Stats3 stats) throws IOException {
+            // Stream the file through a channel into a buffer.
+            FileInputStream stream = new FileInputStream(path.toFile());
+            int total=0;
+            // open the stream in a try-with resource which automatically closes it when done.
+            try (FileChannel channel = stream.getChannel()) {
+                ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
+                boolean valIsSet = false; // is a value stored in val?
+                int val = 0;
+                int bytesRead = channel.read(buffer);
+                // Keep reading until there are no more bytes in the file
+                while ( bytesRead != -1){
+                    // flip the buffer for reading.
+                    buffer.flip();
+                    // parse every byte in the buffer
+                    while (buffer.hasRemaining()){
+                        byte c = buffer.get();
+                        // does the byte represent a digit? (ASCII codes [48;57])
+                        if ( 47 <  c  && c < 58 ){
+                            val = val * 10 + (c-48);
+                            valIsSet = true;
+                        }
+                        // We have probably read comma or some other character
+                        // that is not a digit.
+                        else if (valIsSet){
+                            valIsSet = false;
+                            stats.occurenceOf(val);
+                            total += val;
+                            val=0;
+                        }
+                    }
+                    // Process the next block of the file.
+                    buffer.clear();
+                    bytesRead = channel.read(buffer);
+                }
+            }
+            stats.addFileTotal(path, total);
+            return newResult(path,total);
+        }
 
+        private static class Stats3 implements Stats{
+            private Integer least;
+            private Integer most;
+            private final Dictionary<Integer, Integer> counter = new Hashtable<>();
+            private final Hashtable<Integer, ArrayList<Path>> fileTotals = new Hashtable<>();
+            
+            public synchronized void occurenceOf(int number) {
+                if (counter.get(number)==null) counter.put(number, 1);
+                else {
+                    counter.put(number,counter.get(number)+1);
+                }
+                if (least == null) least = number;
+                if (most == null ) most = number;
+                if (counter.get(most)<counter.get(number)) most = number;
+                if (counter.get(least)>counter.get(number)) least = number;
+            }
+            
+            public synchronized void addFileTotal(Path path, int total) {
+                if (!fileTotals.containsKey(total)) {
+                    ArrayList<Path> arr = new ArrayList<>();
+                    arr.add(path);
+                    fileTotals.put(total, arr);
+                }
+                else {
+                    fileTotals.get(total).add(path);
+                }
+            }
+            
+            @Override
+            public int occurrences(int number) {
+                return counter.get(number);
+            }
+            
+            @Override
+            public int mostFrequent() {
+                return most;
+            }
+            
+            @Override
+            public int leastFrequent() {
+                return least;
+            }
+            
+            @Override
+            public List<Path> byTotals() {
+                ArrayList<Path> ret  = new ArrayList<>();
+                ArrayList<Integer> keys = new ArrayList();
+                keys.addAll(fileTotals.keySet());
+                keys.sort(null);
+                for(int i:keys){
+                    ret.addAll(fileTotals.get(i));
+                }
+                return ret;
+            }
+            
+        }
 
     
     
