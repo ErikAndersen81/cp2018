@@ -18,9 +18,21 @@ public class Main
 {
 	public static void main( String[] args )
 	{
-         testm2();   
+         testm3();   
         }
 
+    private static void testm3() {
+            Path dir = Paths.get("/home/erik/NetBeansProjects/exam/cp2018/exam/data_example");
+            long t1 =System.currentTimeMillis();
+            Stats res = Exam.m3(dir);
+            long t2 =System.currentTimeMillis();
+            System.out.println("least freq:" + res.leastFrequent());
+            System.out.println("most freq:" + res.mostFrequent());
+            System.out.println("Totals 0: " + res.byTotals().get(0));
+            System.out.println("Totals last: " + res.byTotals().get(res.byTotals().size()-1));
+            System.out.println("took " + (t2-t1) + "ms");
+        }
+        
     private static void testm2() {
             Path dir = Paths.get("/home/erik/NetBeansProjects/exam/cp2018/exam/data_example");
             long t1 =System.currentTimeMillis();
